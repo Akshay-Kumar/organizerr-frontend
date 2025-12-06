@@ -40,6 +40,14 @@
     background-color: #2a2a3c;
     color: #eee;
     flex: 1;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.tf-input:focus,
+.tf-select:focus {
+    outline: none;
+    border-color: #1976d2;
+    box-shadow: 0 0 5px rgba(25, 118, 210, 0.5);
 }
 
 .tf-input::placeholder {
@@ -124,6 +132,7 @@
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
+    transition: background 0.2s;
 }
 
 .tf-button:hover {
@@ -178,4 +187,52 @@
     margin-top: 6px;
     font-size: 13px;
     color: #ccc;
+}
+
+/* ------------------------------ */
+/* MULTI-FILE METADATA FORM STYLES */
+/* ------------------------------ */
+
+.tf-file-meta {
+    border: 1px solid #444;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 15px;
+    background-color: #2a2a3c;
+    transition: border-color 0.2s;
+}
+
+.tf-file-meta:hover {
+    border-color: #1976d2;
+}
+
+.tf-file-meta h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.tf-file-meta hr {
+    border: 0;
+    border-top: 1px solid #444;
+    margin: 15px 0;
+}
+
+.tf-file-meta .tf-row {
+    margin-bottom: 10px;
+}
+
+.tf-file-meta .tf-inline input,
+.tf-file-meta .tf-inline select {
+    flex: 1;
+    min-width: 80px;
+}
+
+.tf-button-remove {
+    background-color: #d32f2f;
+}
+
+.tf-button-remove:hover {
+    background-color: #b71c1c;
 }

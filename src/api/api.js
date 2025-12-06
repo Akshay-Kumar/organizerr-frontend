@@ -5,13 +5,21 @@ const API_BASE = process.env.REACT_APP_API_URL; // Backend URL
 
 // --- Torrent APIs ---
 
-// Add torrent (magnet URL or .torrent file)
+// --- Single torrent (optional, existing) ---
 export const addTorrent = async (formData) => {
     return axios.post(`${API_BASE}/torrents`, formData, {
         headers: {
             "Content-Type": "multipart/form-data",
         },
     });
+};
+
+// --- Batch torrents (new) ---
+export const addTorrentsBatch = async (formData) => {
+    const res = await axios.post(`${API_BASE}/torrents/batch`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
 };
 
 // Get all torrents

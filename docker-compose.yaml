@@ -23,18 +23,5 @@ services:
       - organizerr-network
     restart: unless-stopped
 
-  media-organizer:
-    build: ./media-organizer
-    container_name: media-organizer
-    volumes:
-      # 🔥 IMPORTANT: map real media paths
-      - ${MEDIA_PATH}:/media
-      - ${FILE_OPS_PATH}:/config
-    environment:
-      - API_URL=http://localhost:${BACKEND_PORT}
-    networks:
-      - organizerr-network
-    restart: unless-stopped
-
 networks:
   organizerr-network:

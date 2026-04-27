@@ -67,9 +67,9 @@ set +a
 # 5. Create backend.env
 # -------------------------------
 if [ ! -f "backend.env" ]; then
-  echo "⚙️ Creating organizerr-backend/backend.env..."
+  echo "⚙️ Creating backend.env..."
 
-  cat <<EOF > organizerr-backend/backend.env
+  cat <<EOF > backend.env
 TORRENT_CATEGORY=media-organizerr
 DATABASE_URL=sqlite:///./data/torrents.db
 UPLOAD_DIR=/app/uploads
@@ -85,16 +85,16 @@ TMDB_API_KEY=*****
 
 FILE_OPERATIONS_PATH=/config/file_operations.json
 EOF
-  echo "Please update organizerr-backend/backend.env before re-running"
+  echo "Please update backend.env before re-running"
   exit 1
 fi
 
 # -------------------------------
 # 6. Create frontend .env
 # -------------------------------
-echo "⚙️ Creating organizerr-frontend/frontend.env..."
+echo "⚙️ Creating frontend.env..."
 
-cat <<EOF > organizerr-frontend/frontend.env
+cat <<EOF > organizerr-frontend/.env
 REACT_APP_WS_HOST=${BACKEND_URL}
 REACT_APP_WS_PORT=${WS_PORT}
 REACT_APP_API_URL=https://${BACKEND_URL}

@@ -92,9 +92,9 @@ fi
 # -------------------------------
 # 6. Create frontend .env
 # -------------------------------
-echo "⚙️ Creating organizerr-frontend/.env..."
+echo "⚙️ Creating organizerr-frontend/frontend.env..."
 
-cat <<EOF > organizerr-frontend/.env
+cat <<EOF > organizerr-frontend/frontend.env
 REACT_APP_WS_HOST=${BACKEND_URL}
 REACT_APP_WS_PORT=${WS_PORT}
 REACT_APP_API_URL=https://${BACKEND_URL}

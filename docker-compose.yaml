@@ -5,6 +5,8 @@ services:
     container_name: organizerr-frontend
     ports:
       - "${FRONTEND_PORT}:80"
+    env_file:
+      - frontend.env
     networks:
       - organizerr-network
     restart: unless-stopped

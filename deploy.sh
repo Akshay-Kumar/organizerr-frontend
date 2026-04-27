@@ -39,7 +39,7 @@ else
 fi
 
 # -------------------------------
-# 3. Create root .env
+# 3. Ensure root .env exists
 # -------------------------------
 if [ ! -f ".env" ]; then
   echo "⚙️ Creating root .env..."
@@ -51,6 +51,8 @@ WS_PORT=443
 FRONTEND_URL=organizerr.beast-x.xyz
 BACKEND_URL=organizerr-backend.beast-x.xyz
 EOF
+  echo "Please update .env before re-running"
+  exit 1
 fi
 
 # -------------------------------
@@ -83,6 +85,8 @@ TMDB_API_KEY=*****
 
 FILE_OPERATIONS_PATH=/config/file_operations.json
 EOF
+  echo "Please update backend.env before re-running"
+  exit 1
 fi
 
 # -------------------------------
@@ -117,14 +121,14 @@ echo "⏳ Waiting for services..."
 sleep 15
 
 echo "🔍 Checking backend..."
-if curl -k -s https://${BACKEND_URL} > /dev/null; then
+if curl -k -s "https://${BACKEND_URL}" > /dev/null; then
   echo "✅ Backend is reachable"
 else
   echo "⚠️ Backend not reachable yet (SSL or startup delay)"
 fi
 
 echo "🔍 Checking frontend..."
-if curl -k -s https://${FRONTEND_URL} > /dev/null; then
+if curl -k -s "https://${FRONTEND_URL}" > /dev/null; then
   echo "✅ Frontend is reachable"
 else
   echo "⚠️ Frontend not reachable yet"

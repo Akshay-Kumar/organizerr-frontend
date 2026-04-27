@@ -236,3 +236,7 @@
 .tf-button-remove:hover {
     background-color: #b71c1c;
 }
+
+.tf-metadata-row {
+    scroll-margin-top: 90px; /* helps if you later add sticky header */
+}

@@ -4,6 +4,7 @@ import TorrentForm from "../components/TorrentForm";
 import TorrentList from "../components/TorrentList";
 import LoginForm from "../components/LoginForm";
 import RegisterForm from "../components/RegisterForm";
+import TorrentsDashboard from "../components/TorrentsDashboard";
 import "./Home.css";
 
 export default function Home() {
@@ -11,7 +12,9 @@ export default function Home() {
     const [refresh, setRefresh] = useState(false);
     const [showRegister, setShowRegister] = useState(false);
 
-    // Update token in state and localStorage
+    // NEW: view toggle
+    const [view, setView] = useState("home"); // "home" | "dashboard"
+
     const handleLogin = (newToken) => {
         localStorage.setItem("token", newToken);
         setToken(newToken);
@@ -22,12 +25,14 @@ export default function Home() {
         setToken(null);
     };
 
-    const handleAdded = () => setRefresh(prev => !prev);
+    const handleAdded = () => setRefresh((prev) => !prev);
 
+    // ------------------- AUTH -------------------
     if (!token) {
         return (
             <div className="auth-container">
                 <h1>Torrent Organizer</h1>
+
                 {showRegister ? (
                     <>
                         <RegisterForm onRegistered={handleLogin} />
@@ -48,15 +53,42 @@ export default function Home() {
             </div>
         );
     }
-        return (
+
+    // ------------------- LOGGED IN -------------------
+    return (
         <div className="home-container">
             <div className="home-header">
                 <h1>Torrent Organizer</h1>
-                <button className="logout-btn" onClick={handleLogout}>Logout</button>
+
+                <div className="home-header-actions">
+                    <button
+                        className={`nav-btn ${view === "home" ? "active" : ""}`}
+                        onClick={() => setView("home")}
+                    >
+                        Home
+                    </button>
+
+                    <button
+                        className={`nav-btn ${view === "dashboard" ? "active" : ""}`}
+                        onClick={() => setView("dashboard")}
+                    >
+                        Dashboard
+                    </button>
+
+                    <button className="logout-btn" onClick={handleLogout}>
+                        Logout
+                    </button>
+                </div>
             </div>
-            <TorrentForm onAdded={handleAdded} token={token} />
-            <TorrentList key={refresh} token={token} />
+
+            {view === "home" ? (
+                <>
+                    <TorrentForm onAdded={handleAdded} token={token} />
+                    <TorrentList key={refresh} token={token} />
+                </>
+            ) : (
+                <TorrentsDashboard />
+            )}
         </div>
     );
-
 }

@@ -1,7 +1,8 @@
 // src/pages/TorrentsDashboard.js
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import useTorrents from "../hooks/useTorrents";
 import "./TorrentsDashboard.css";
+import "./Loading.css"
 
 function formatBytesPerSec(bps) {
     const n = Number(bps || 0);
@@ -126,7 +127,7 @@ function getHashLabel(hashStatus) {
 
 export default function TorrentsDashboard() {
     const token = localStorage.getItem("token");
-    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess } =
+    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded, refreshFileOperations } =
         useTorrents(token);
 
     const [query, setQuery] = useState("");
@@ -136,6 +137,36 @@ export default function TorrentsDashboard() {
             (t.name || "").toLowerCase().includes(query.toLowerCase())
         );
     }, [torrents, query]);
+
+    useEffect(() => {
+        const interval = setInterval(() => {
+            refreshFileOperations();
+        }, 5000); // every 5 seconds
+
+        return () => clearInterval(interval);
+    }, [refreshFileOperations]);
+
+    if (!loaded) {
+        return (
+            <div className="skeleton-list">
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <div className="skeleton-row" key={i}>
+                        <div className="skeleton-thumb"></div>
+
+                        <div className="skeleton-content">
+                            <div className="skeleton-line title"></div>
+                            <div className="skeleton-line"></div>
+                            <div className="skeleton-line short"></div>
+
+                            <div className="skeleton-progress">
+                                <div className="skeleton-progress-bar"></div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
     return (
         <div className="dashboard">
@@ -158,7 +189,7 @@ export default function TorrentsDashboard() {
                     const hashStatus = getHashStatus(fileOp);
 
                     return (
-                        <div key={t.id} className="torrent-card">
+                        <div key={`${t.id}-${t.hash}`} className="torrent-card">
                             <div className="torrent-left">
                                 {t.poster ? (
                                     <img src={t.poster} alt="" className="poster" />

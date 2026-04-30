@@ -23,21 +23,30 @@ function withToken(url, token) {
 
 // --- Torrent APIs ---
 
-export const addTorrent = async (formData) => {
+export const addTorrent = async (token, formData) => {
     return api.post(`/torrents`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: {
+            "Content-Type": "multipart/form-data",
+            "Authorization": `Bearer ${token}`,
+        },
     });
 };
 
-export const addTorrentsBatch = async (formData) => {
-    const res = await api.post(`/torrents/batch`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+export const addTorrentsBatch = async (token, formData) => {
+    return api.post(`/torrents/batch`, formData, {
+        headers: {
+            "Content-Type": "multipart/form-data",
+            "Authorization": `Bearer ${token}`,
+        },
     });
-    return res.data;
 };
 
-export const getTorrents = async () => {
-    return api.get(`/torrents`);
+export const getTorrents = async (token) => {
+    return api.get(`/torrents`, {
+        headers: {
+            "Authorization": `Bearer ${token}`, // ✅ correct
+        },
+    });
 };
 
 export const updateTorrent = async (id, data, token) => {
@@ -86,5 +95,13 @@ export const login = async (form) => {
 };
 
 export const getFileOperations = async (token) => {
-    return api.get(withToken(`/api/file-operations`, token));
+    return api.get(`/api/file-operations`);
+};
+
+export const getFileOperation = async (token, info_hash) => {
+    return api.get(`/api/file-operations/${info_hash}`);
+};
+
+export const postFileOperation = async (data) => {
+    return api.post(`/api/file-operations`, data);
 };

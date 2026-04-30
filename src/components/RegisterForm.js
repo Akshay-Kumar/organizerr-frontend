@@ -4,7 +4,12 @@ import { login, register } from "../api/api";
 import "./Auth.css";
 
 export default function RegisterForm({ onRegistered }) {
-    const [form, setForm] = useState({ username: "", password: "" });
+    const [form, setForm] = useState({
+        username: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+    });
     const [error, setError] = useState("");
 
     const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
@@ -40,10 +45,28 @@ export default function RegisterForm({ onRegistered }) {
             />
 
             <input
+                name="email"
+                type="email"
+                placeholder="Email"
+                value={form.email}
+                onChange={handleChange}
+                required
+            />
+
+            <input
                 name="password"
                 type="password"
                 placeholder="Password"
                 value={form.password}
+                onChange={handleChange}
+                required
+            />
+
+            <input
+                name="confirm_password"
+                type="password"
+                placeholder="Confirm Password"
+                value={form.confirm_password}
                 onChange={handleChange}
                 required
             />

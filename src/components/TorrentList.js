@@ -3,10 +3,33 @@ import React, { useState } from "react";
 import useTorrents from "../hooks/useTorrents";
 import TorrentItem from "./TorrentItem";
 import "./TorrentList.css";
+import "./Loading.css"
 
 export default function TorrentList({ token }) {
-    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess } = useTorrents(token);
+    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded } = useTorrents(token);
     const [deleteTarget, setDeleteTarget] = useState(null);
+
+    if (!loaded) {
+        return (
+            <div className="skeleton-list">
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <div className="skeleton-row" key={i}>
+                        <div className="skeleton-thumb"></div>
+
+                        <div className="skeleton-content">
+                            <div className="skeleton-line title"></div>
+                            <div className="skeleton-line"></div>
+                            <div className="skeleton-line short"></div>
+
+                            <div className="skeleton-progress">
+                                <div className="skeleton-progress-bar"></div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
     return (
         <div className="torrent-list-vertical">

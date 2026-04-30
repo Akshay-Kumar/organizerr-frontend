@@ -6,6 +6,7 @@ export default function TorrentForm({ onAdded }) {
     const [torrentUrl, setTorrentUrl] = useState("");
     const [torrentFiles, setTorrentFiles] = useState([]);
     const [metadataRows, setMetadataRows] = useState([]);
+    const [token, setToken] = useState(localStorage.getItem("token"));
 
     // NEW: magnet metadata row (separate from file rows)
     const [magnetRow, setMagnetRow] = useState({
@@ -262,7 +263,7 @@ export default function TorrentForm({ onAdded }) {
             torrentFiles.forEach((f) => formData.append("files", f));
             formData.append("metadata", JSON.stringify(metaPayload));
 
-            await addTorrentsBatch(formData);
+            await addTorrentsBatch(token, formData)
 
             // Reset
             setTorrentUrl("");

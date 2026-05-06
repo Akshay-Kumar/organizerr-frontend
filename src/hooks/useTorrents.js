@@ -49,6 +49,7 @@ export default function useTorrents(token) {
     const lastUpdateRef = useRef(Date.now());
     const fallbackTriggeredRef = useRef(false);
     const loadedRef = useRef(false);
+    const lastUpdateTs = useRef({});
 
     // -----------------------------
     // FETCH FUNCTIONS
@@ -77,15 +78,70 @@ export default function useTorrents(token) {
             const res = await getFileOperations(token);
             const opsArray = res.data || [];
             const map = {};
+
             opsArray.forEach(op => {
-                if (op.info_hash) {
-                    map[normalizeHash(op.info_hash)] = op;
-                }
+                if (!op?.info_hash || !op?.file_hash) return;
+                const key = normalizeHash(op.info_hash);
+                if (!key) return;
+                if (!map[key]) map[key] = [];
+                map[key].push(op);
             });
+
+            // sort newest first
+            Object.keys(map).forEach(k => {
+                map[k].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            });
+
+            console.log("📦 FETCHED FILE OPS MAP:");
+            Object.keys(map).forEach(k => {
+                console.log("HASH:", k, "COUNT:", map[k].length);
+            });
+
+            console.log("📡 RAW API RESPONSE:", res.data);
+
             setFileOperations(map);
         } catch (err) {
             console.error("fetchFileOperations error:", err);
         }
+    };
+
+    const handleFileOpUpdate = (op) => {
+        if (!op?.info_hash || !op?.file_hash) return;
+
+        const key = normalizeHash(op.info_hash);
+
+        setFileOperations(prev => {
+            const existingList = prev[key] || [];
+            let updatedList = [...existingList];
+
+            const index = updatedList.findIndex(
+                (f) => f.file_hash === op.file_hash
+            );
+
+            if (index !== -1) {
+                const existing = updatedList[index];
+
+                updatedList[index] = {
+                    ...existing,
+                    ...op,
+                    progress: Math.max(existing.progress || 0, op.progress || 0),
+                };
+            } else {
+                updatedList.push(op);
+            }
+
+            // sort latest first
+            updatedList.sort((a, b) => {
+                const t = new Date(b.timestamp) - new Date(a.timestamp);
+                if (t !== 0) return t;
+                return (b.progress || 0) - (a.progress || 0);
+            });
+
+            return {
+                ...prev,
+                [key]: updatedList.slice(0, 50)
+            };
+        });
     };
 
     useEffect(() => {
@@ -122,15 +178,24 @@ export default function useTorrents(token) {
             }
         }, 15000);
 
+        /* FIX 4 — Prevent memory leak in throttle map (optional but smart) */
+        setInterval(() => {
+            const now = Date.now();
+            Object.keys(lastUpdateTs.current).forEach((k) => {
+                if (now - lastUpdateTs.current[k] > 60000) {
+                    delete lastUpdateTs.current[k];
+                }
+            });
+        }, 60000);
+
         // -----------------------------
         // WEBSOCKET
         // -----------------------------
         const connectWS = () => {
             if (stoppedRef.current) return;
 
-            if (wsRef.current) {
-                try { wsRef.current.close(); } catch {}
-                wsRef.current = null;
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                return; // ✅ DO NOT reconnect if already open
             }
 
             const wsUrl = buildWsUrl(token);
@@ -150,6 +215,20 @@ export default function useTorrents(token) {
 
                 try {
                     const data = JSON.parse(e.data);
+
+                    // 🔥 THROTTLE START
+                    const now = Date.now();
+                    if (data.type === "file_ops_update") {
+                        if (!data.file_operation) return;
+
+                        const key = `${data.file_operation?.info_hash || "x"}_${data.file_operation?.file_hash || "y"}`;
+                        if (!(key in lastUpdateTs.current)) {
+                            lastUpdateTs.current[key] = 0;
+                        }
+                        if (now - lastUpdateTs.current[key] < 100) return;
+                        lastUpdateTs.current[key] = now;
+                    }
+                    // 🔥 THROTTLE END
 
                     lastUpdateRef.current = Date.now(); // ✅ moved AFTER parse
 
@@ -172,33 +251,60 @@ export default function useTorrents(token) {
                         loadedRef.current = true;
                     }
 
-                    if (data.type === "file_ops_refresh") {
-                        fetchFileOperations(); // ✅ simplified
+                    if (data.type === "file_ops_update") {
+                        handleFileOpUpdate(data.file_operation);
+                        console.log("FILE OP UPDATE:", data.file_operation);
                     }
 
-                    if (data.type === "file_ops_update") {
-                        fetchFileOperations(); // simple + reliable
+                    if (data.type === "file_ops_snapshot") {
+                        console.log("📦 FULL SNAPSHOT RECEIVED");
+
+                        const map = {};
+
+                        (data.file_operations || []).forEach(op => {
+                            if (!op.info_hash || !op.file_hash) return;
+
+                            const key = normalizeHash(op.info_hash);
+                            if (!map[key]) map[key] = [];
+
+                            map[key].push(op);
+                        });
+
+                        // sort newest first
+                        Object.keys(map).forEach(k => {
+                            map[k].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        });
+
+                        setFileOperations(map);
                     }
+
 
                 } catch (err) {
                     console.error("WS parse error:", err);
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (e) => {
                 if (stoppedRef.current) return;
 
+                if (attemptRef.current > 10) {
+                    console.error("WS stopped reconnecting after 10 attempts");
+                    return;
+                }
+
                 attemptRef.current++;
+
                 const delay = Math.min(5000, 1000 * Math.pow(2, attemptRef.current));
 
-                console.warn(`WebSocket closed. Reconnecting in ${delay / 1000}s`);
+                console.warn(
+                    `WebSocket closed (${e.code}). Reconnecting in ${delay / 1000}s`
+                );
 
                 reconnectTimerRef.current = setTimeout(connectWS, delay);
             };
 
             ws.onerror = (err) => {
                 console.error("WebSocket error:", err);
-                try { ws.close(); } catch {}
             };
         };
 
@@ -234,6 +340,17 @@ export default function useTorrents(token) {
 
     }, [token]);
 
+    useEffect(() => {
+        if (!token) return;
+
+        const interval = setInterval(() => {
+            console.log("🔄 Syncing file operations...");
+            fetchFileOperations();
+        }, 15000); // every 15 seconds
+
+        return () => clearInterval(interval);
+    }, [token]);
+
     // -----------------------------
     // ACTIONS
     // -----------------------------
@@ -259,9 +376,17 @@ export default function useTorrents(token) {
 
     const mergedTorrents = torrents.map((t) => {
         const hash = normalizeHash(t.info_hash || t.hash || t.infoHash);
+
+        console.log("----");
+        console.log("TORRENT:", t.name);
+        console.log("HASH:", hash);
+        console.log("HAS OPS?", !!fileOperations[hash]);
+        console.log("OPS COUNT:", fileOperations[hash]?.length);
+        console.log("AVAILABLE OPS KEYS:", Object.keys(fileOperations));
+
         return {
             ...t,
-            fileOperation: hash ? fileOperations[hash] || null : null,
+            fileOperations: hash ? fileOperations[hash] || [] : [],
         };
     });
 

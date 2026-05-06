@@ -94,13 +94,38 @@ function isDownloadComplete(torrent) {
     return progress >= 100;
 }
 
-function getMoveState(torrent, fileOperation) {
-    if (fileOperation?.success === true) return "moved";
-    if (fileOperation?.success === false) return "failed";
+function getMoveState(torrent) {
+    const latestOpsMap = {};
 
-    if (isDownloadComplete(torrent)) {
-        return "waiting";
-    }
+    (torrent.fileOperations || []).forEach(op => {
+        if (!op.file_hash) return;
+
+        if (
+            !latestOpsMap[op.file_hash] ||
+            new Date(op.timestamp || 0) > new Date(latestOpsMap[op.file_hash].timestamp || 0)
+        ) {
+            latestOpsMap[op.file_hash] = op;
+        }
+    });
+
+    const fileOps = Object.values(latestOpsMap);
+
+    if (!fileOps.length) return "processing";
+
+    const allCompleted = fileOps.every(
+        op => op.status === "completed" && op.progress === 100
+    );
+
+    // ✅ IMPORTANT: check this FIRST
+    if (allCompleted) return "moved";
+
+    const anyFailed = fileOps.some(
+        op => op.status === "failed"
+    );
+
+    if (anyFailed) return "failed";
+
+    if (isDownloadComplete(torrent)) return "waiting";
 
     return "processing";
 }
@@ -127,10 +152,18 @@ function getHashLabel(hashStatus) {
 
 export default function TorrentsDashboard() {
     const token = localStorage.getItem("token");
-    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded, refreshFileOperations } =
+    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded } =
         useTorrents(token);
 
     const [query, setQuery] = useState("");
+    const [expanded, setExpanded] = useState({});
+
+    const toggleExpand = (id) => {
+        setExpanded(prev => ({
+            ...prev,
+            [id]: !prev[id]
+        }));
+    };
 
     const filtered = useMemo(() => {
         return torrents.filter((t) =>
@@ -138,13 +171,17 @@ export default function TorrentsDashboard() {
         );
     }, [torrents, query]);
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            refreshFileOperations();
-        }, 5000); // every 5 seconds
+    const STAGE_LABELS = {
+        copy: "Copying",
+        metadata: "Metadata",
+        subtitles: "Subtitles",
+        artwork: "Artwork",
+        validation: "Validating",
+        plex: "Plex Scan",
+        emby: "Emby Scan",
+        completed: "Completed"
+    };
 
-        return () => clearInterval(interval);
-    }, [refreshFileOperations]);
 
     if (!loaded) {
         return (
@@ -184,12 +221,29 @@ export default function TorrentsDashboard() {
             <div className="torrent-list">
                 {filtered.map((t) => {
                     const state = normalizeState(t.state);
-                    const fileOp = t.fileOperation;
+                    const fileOp = (t.fileOperations || [])
+                        .slice()
+                        .sort((a, b) => (new Date(b.timestamp || 0) - new Date(a.timestamp || 0)))[0] || null;
                     const moveState = getMoveState(t, fileOp);
+                    const dedupedOps = Object.values(
+                        (t.fileOperations || []).reduce((acc, op) => {
+                            if (!op.file_hash) return acc;
+
+                            const existing = acc[op.file_hash];
+
+                            const getTime = (ts) => new Date(ts || 0).getTime();
+
+                            if (!existing || getTime(op.timestamp) > getTime(existing.timestamp)) {
+                                acc[op.file_hash] = op;
+                            }
+
+                            return acc;
+                        }, {})
+                    );
                     const hashStatus = getHashStatus(fileOp);
 
                     return (
-                        <div key={`${t.id}-${t.hash}`} className="torrent-card">
+                        <div key={t.id} className="torrent-card">
                             <div className="torrent-left">
                                 {t.poster ? (
                                     <img src={t.poster} alt="" className="poster" />
@@ -201,6 +255,17 @@ export default function TorrentsDashboard() {
                             <div className="torrent-middle">
                                 <div className="torrent-title">
                                     <span className="torrent-name">{t.name}</span>
+
+                                    {/* 🆕 FILE COUNT */}
+                                    {t.fileOperations?.length > 1 && (
+                                        <span
+                                            className="file-count clickable"
+                                            onClick={() => toggleExpand(t.id)}
+                                        >
+                                            {t.fileOperations.length} files {expanded[t.id] ? "▲" : "▼"}
+                                        </span>
+                                    )}
+
                                     <span className={`badge ${state}`}>{state}</span>
                                 </div>
 
@@ -224,6 +289,75 @@ export default function TorrentsDashboard() {
                                 </div>
 
                                 <div className="torrent-move-section">
+                                    {expanded[t.id] && (
+                                        <div className="file-ops-list">
+                                            {dedupedOps.slice(0, 20).map(op => (
+                                                <div key={op.file_hash} className="file-op-row">
+
+                                                    <div className="file-op-left">
+                                                        <span className="file-name" title={op.source}>
+                                                            {op.source?.split("/").pop() || "Unknown file"}
+                                                        </span>
+
+                                                        <span className="file-stage">
+                                                            {STAGE_LABELS[op.stage] || "Processing"}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* 🔥 NEW: PROGRESS BAR */}
+                                                    <div className="file-progress-bar">
+                                                        <div
+                                                            className="file-progress-fill"
+                                                            style={{ width: `${op.progress || 0}%` }}
+                                                        />
+                                                    </div>
+
+                                                    <div className="file-op-right">
+
+                                                        {/* 🔥 PROGRESS % */}
+                                                        <span className="file-progress-text">
+                                                            {Math.round(op.progress || 0)}%
+                                                        </span>
+
+                                                        {/* 🔥 STATUS (keep your existing logic) */}
+                                                        <span className={`status ${
+                                                            op.status === "completed" ? "success" :
+                                                                op.status === "failed" ? "failed" :
+                                                                    "processing"
+                                                        }`}>
+                                                            {op.status === "completed" ? "✔" :
+                                                                op.status === "failed" ? "✖" : "⏳"}
+                                                        </span>
+
+                                                        {/* ✅ KEEP: FILE SIZE */}
+                                                        <span className="file-size">
+                                                            {formatFileSize(op.file_size)}
+                                                        </span>
+
+                                                        {/* ✅ KEEP: TIMESTAMP */}
+                                                        <span className="file-time">
+                                                            {op.timestamp ? formatDateTime(op.timestamp) : "—"}
+                                                        </span>
+
+                                                        {/* 🔥 NEW: SPEED */}
+                                                        {op.speed && (
+                                                            <span className="file-speed">
+                                                                {op.speed} MB/s
+                                                            </span>
+                                                        )}
+
+                                                        {/* 🔥 NEW: ETA */}
+                                                        {op.eta && (
+                                                            <span className="file-eta">
+                                                                ETA: {Math.round(op.eta)}s
+                                                            </span>
+                                                        )}
+
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                     <div className="torrent-move-header">
                                         <span className={`move-badge ${moveState}`}>
                                             {getMoveLabel(moveState)}

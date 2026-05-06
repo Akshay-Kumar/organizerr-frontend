@@ -94,11 +94,21 @@ export const login = async (form) => {
     return api.post(`/auth/login`, new URLSearchParams(form));
 };
 
+/*
 export const getFileOperations = async (token) => {
     return api.get(`/api/file-operations`);
 };
+*/
 
-export const getFileOperation = async (token, info_hash) => {
+export const getFileOperations = async (token) => {
+    return api.get(`/api/file-operations`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+};
+
+export const getFileOperationsByHash = async (token, info_hash) => {
     return api.get(`/api/file-operations/${info_hash}`);
 };
 

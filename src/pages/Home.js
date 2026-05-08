@@ -22,6 +22,8 @@ export default function Home() {
 
     const handleLogout = () => {
         localStorage.removeItem("token");
+        localStorage.removeItem("user");
+
         setToken(null);
     };
 

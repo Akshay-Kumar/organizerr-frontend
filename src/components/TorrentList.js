@@ -6,8 +6,20 @@ import "./TorrentList.css";
 import "./Loading.css"
 
 export default function TorrentList({ token }) {
-    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded } = useTorrents(token);
     const [deleteTarget, setDeleteTarget] = useState(null);
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
+    const {
+        torrents,
+        stopTorrentProcess,
+        resumeTorrentProcess,
+        deleteTorrentProcess,
+        loaded,
+
+        totalPages,
+        totalItems,
+
+    } = useTorrents(token, page, pageSize);
 
     if (!loaded) {
         return (
@@ -33,6 +45,51 @@ export default function TorrentList({ token }) {
 
     return (
         <div className="torrent-list-vertical">
+            <div className="pagination-bar">
+                <div className="pagination-info">
+                    Showing page {page} of {totalPages} ({totalItems} torrents)
+                </div>
+
+                <div className="pagination-controls">
+                    <button
+                        disabled={page <= 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                        Previous
+                    </button>
+                        {Array.from(
+                            {
+                                length: Math.min(5, totalPages)
+                            },
+                            (_, i) => {
+
+                                let start = Math.max(1, page - 2);
+
+                                if (start + 4 > totalPages) {
+                                    start = Math.max(1, totalPages - 4);
+                                }
+
+                                return start + i;
+                            }
+                        ).map((p) => (
+                            <button
+                                key={p}
+                                className={p === page ? "active" : ""}
+                                onClick={() => setPage(p)}
+                            >
+                                {p}
+                            </button>
+                        ))}
+
+                    <button
+                        disabled={page >= totalPages}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                        Next
+                    </button>
+
+                </div>
+            </div>
             {torrents.map(t => (
                 <TorrentItem
                     key={t.id || t.info_hash}
@@ -45,7 +102,6 @@ export default function TorrentList({ token }) {
                     }}
                 />
             ))}
-
             {deleteTarget && (
                 <div className="modal-overlay">
                     <div className="modal">

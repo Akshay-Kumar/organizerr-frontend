@@ -14,15 +14,7 @@ const api = axios.create({
     timeout: 15000, // 15 seconds
 });
 
-// Helper: safely attach token as query param (backend expects ?token=)
-function withToken(url, token) {
-    if (!token) return url;
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}token=${encodeURIComponent(token)}`;
-}
-
 // --- Torrent APIs ---
-
 export const addTorrent = async (token, formData) => {
     return api.post(`/torrents`, formData, {
         headers: {
@@ -41,8 +33,28 @@ export const addTorrentsBatch = async (token, formData) => {
     });
 };
 
-export const getTorrents = async (token) => {
-    return api.get(`/torrents`, {
+export const getTorrents = (
+    token,
+    page = 1,
+    pageSize = 25
+) => {
+    return api.get(`/torrents?page=${page}&page_size=${pageSize}`, {
+        headers: {
+            "Authorization": `Bearer ${token}`, // ✅ correct
+        },
+    });
+};
+
+export const getTorrentById = async (id, token) => {
+    return api.get(`/torrents/${id}`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+};
+
+export const getMe = (token) => {
+    return api.get(`/me`, {
         headers: {
             "Authorization": `Bearer ${token}`, // ✅ correct
         },
@@ -50,19 +62,35 @@ export const getTorrents = async (token) => {
 };
 
 export const updateTorrent = async (id, data, token) => {
-    return api.patch(withToken(`/api/torrents/${id}`, token), data);
+    return api.patch(`/api/torrents/${id}`, data, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
 };
 
 export const stopTorrent = async (id, token) => {
-    return api.post(withToken(`/api/torrents/${id}/stop`, token));
+    return api.post(`/api/torrents/${id}/stop`, {}, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
 };
 
 export const resumeTorrent = async (id, token) => {
-    return api.post(withToken(`/api/torrents/${id}/resume`, token));
+    return api.post(`/api/torrents/${id}/resume`, {}, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
 };
 
 export const deleteTorrent = async (id, token) => {
-    return api.delete(withToken(`/api/torrents/${id}`, token));
+    return api.delete(`/api/torrents/${id}`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
 };
 
 // --- Media search ---
@@ -93,12 +121,6 @@ export const login = async (form) => {
     // form: { username, password }
     return api.post(`/auth/login`, new URLSearchParams(form));
 };
-
-/*
-export const getFileOperations = async (token) => {
-    return api.get(`/api/file-operations`);
-};
-*/
 
 export const getFileOperations = async (token) => {
     return api.get(`/api/file-operations`, {

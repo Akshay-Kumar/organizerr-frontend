@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { getTorrents, stopTorrent, resumeTorrent, deleteTorrent, getFileOperations } from "../api/api";
+import { getTorrents, stopTorrent, resumeTorrent, deleteTorrent, getFileOperations, getTorrentById } from "../api/api";
 
 function normalizeHash(hash) {
     return String(hash || "").trim().toLowerCase();
@@ -37,8 +37,31 @@ function buildWsUrl(token) {
     const pageProto = window.location.protocol === "https:" ? "wss" : "ws";
     return `${pageProto}://${window.location.host}/ws/torrents?token=${encodeURIComponent(token)}`;
 }
-export default function useTorrents(token) {
+export default function useTorrents(token, externalPage = null, externalPageSize = null) {
     const [torrents, setTorrents] = useState([]);
+    const [internalPage, setInternalPage] = useState(1);
+    const [internalPageSize, setInternalPageSize] = useState(
+        Number(localStorage.getItem("torrent_page_size")) || 25
+    );
+
+    const page =
+        externalPage ?? internalPage;
+
+    const pageSize =
+        externalPageSize ?? internalPageSize;
+
+    const setPage =
+        externalPage !== null
+            ? () => {}
+            : setInternalPage;
+
+    const setPageSize =
+        externalPageSize !== null
+            ? () => {}
+            : setInternalPageSize;
+
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
     const [fileOperations, setFileOperations] = useState({});
     const [loaded, setLoaded] = useState(false);
 
@@ -50,6 +73,7 @@ export default function useTorrents(token) {
     const fallbackTriggeredRef = useRef(false);
     const loadedRef = useRef(false);
     const lastUpdateTs = useRef({});
+    const pageRef = useRef(page);
 
     // -----------------------------
     // FETCH FUNCTIONS
@@ -57,8 +81,35 @@ export default function useTorrents(token) {
 
     const fetchTorrents = async () => {
         try {
-            const res = await getTorrents(token);
-            const sorted = (res.data || []).slice().sort((a, b) => b.id - a.id);
+            console.log(
+                "[FETCH] START",
+                "page =", page,
+                "pageSize =", pageSize
+            );
+            const res = await getTorrents(token, page, pageSize);
+            const payload = res.data || {};
+
+            console.log(
+                "[FETCH] RESPONSE",
+                {
+                    page: payload.page,
+                    totalPages: payload.total_pages,
+                    items: payload.items?.length,
+                    firstTorrent:
+                    payload.items?.[0]?.display_name
+                }
+            );
+
+            setTotalPages(payload.total_pages || 1);
+            setTotalItems(payload.total || 0);
+
+            const sorted = (payload.items || []).slice().sort((a, b) => b.id - a.id);
+            console.log(
+                "[FETCH] SET TORRENTS",
+                sorted.map(t => t.display_name)
+            );
+            setTorrents(sorted);
+            /*
             setTorrents(prev => {
                 const map = new Map(prev.map(t => [t.id, t]));
 
@@ -68,8 +119,30 @@ export default function useTorrents(token) {
 
                 return Array.from(map.values()).sort((a, b) => b.id - a.id);
             });
+            */
         } catch (err) {
             console.error("fetchTorrents error:", err);
+        }
+    };
+
+    const refreshSingleTorrent = async (id) => {
+        try {
+            const res = await getTorrentById(id, token);
+            const updatedTorrent = res.data;
+
+            setTorrents(prev =>
+                prev.map(t =>
+                    t.id === id
+                        ? {
+                            ...t,
+                            ...updatedTorrent
+                        }
+                        : t
+                )
+            );
+
+        } catch (err) {
+            console.error("Failed to refresh torrent:", err);
         }
     };
 
@@ -237,8 +310,24 @@ export default function useTorrents(token) {
                     }
 
                     if (data.type === "torrents_snapshot") {
-                        const incoming = (data.torrents || []).slice().sort((a, b) => b.id - a.id);
+                        console.log(
+                            "[WS] SNAPSHOT",
+                            {
+                                currentPage: pageRef.current,
+                                incoming: data.torrents?.length,
+                                firstTorrent:
+                                data.torrents?.[0]?.display_name
+                            }
+                        );
 
+                        // TEMP FIX FOR PAGINATION
+                        /*
+                        if (pageRef.current !== 1) {
+                            return;
+                        }
+                        */
+                        const incoming = (data.torrents || []).slice().sort((a, b) => b.id - a.id);
+                        /*
                         setTorrents(prev => {
                             const map = new Map(prev.map(t => [t.id, t]));
                             incoming.forEach(t => {
@@ -246,7 +335,40 @@ export default function useTorrents(token) {
                             });
                             return Array.from(map.values()).sort((a, b) => b.id - a.id);
                         });
+                        */
+                        console.log(
+                            "[WS] PATCHING VISIBLE TORRENTS"
+                        );
+                        /*
+                        setTorrents(incoming);
+                        */
+                        setTorrents(prev => {
+                            const updates = new Map(
+                                incoming.map(t => [
+                                    normalizeHash(t.info_hash || t.hash),
+                                    t
+                                ])
+                            );
 
+                            return prev.map(existing => {
+                                const key = normalizeHash(
+                                    existing.info_hash || existing.hash
+                                );
+
+                                const updated = updates.get(key);
+
+                                if (!updated) {
+                                    return existing;
+                                }
+
+                                return {
+                                    ...existing,
+                                    ...updated,
+                                    fileOperations:
+                                        existing.fileOperations || [],
+                                };
+                            });
+                        });
                         setLoaded(true);
                         loadedRef.current = true;
                     }
@@ -351,23 +473,122 @@ export default function useTorrents(token) {
         return () => clearInterval(interval);
     }, [token]);
 
+    useEffect(() => {
+        localStorage.setItem(
+            "torrent_page_size",
+            String(pageSize)
+        );
+    }, [pageSize]);
+
+    useEffect(() => {
+        console.log("FETCHING PAGE:", page, "SIZE:", pageSize);
+    }, [page, pageSize]);
+
+    useEffect(() => {
+        if (!token) return;
+
+        console.log(
+            "[PAGE FETCH EFFECT]",
+            "page =", page,
+            "pageSize =", pageSize
+        );
+
+        fetchTorrents();
+
+    }, [page, pageSize]);
+
+    useEffect(() => {
+        pageRef.current = page;
+    }, [page]);
+
     // -----------------------------
     // ACTIONS
     // -----------------------------
 
+    /*
     const stopTorrentProcess = async (id) => {
         await stopTorrent(id, token);
-        fetchTorrents();
+        await fetchTorrents();
     };
 
     const resumeTorrentProcess = async (id) => {
         await resumeTorrent(id, token);
-        fetchTorrents();
+        await fetchTorrents();
+    };
+    */
+    const stopTorrentProcess = async (id) => {
+
+        // Optimistic update
+        setTorrents(prev =>
+            prev.map(t =>
+                t.id === id
+                    ? {
+                        ...t,
+                        state: "paused",
+                        status: "paused",
+                        live: {
+                            ...t.live,
+                            state: "paused"
+                        }
+                    }
+                    : t
+            )
+        );
+
+        try {
+            await stopTorrent(id, token);
+
+            // Optional delayed sync
+            setTimeout(() => {
+                refreshSingleTorrent(id);
+            }, 1500);
+
+        } catch (err) {
+            console.error(err);
+            // rollback if needed
+            refreshSingleTorrent(id);
+        }
+    };
+
+    const resumeTorrentProcess = async (id) => {
+
+        // Optimistic update
+        setTorrents(prev =>
+            prev.map(t =>
+                t.id === id
+                    ? {
+                        ...t,
+                        state: "resumed",
+                        status: "downloading",
+                        live: {
+                            ...t.live,
+                            state: "downloading"
+                        }
+                    }
+                    : t
+            )
+        );
+
+        try {
+            await resumeTorrent(id, token);
+
+            setTimeout(() => {
+                refreshSingleTorrent(id);
+            }, 1500);
+
+        } catch (err) {
+            console.error(err);
+            refreshSingleTorrent(id);
+        }
     };
 
     const deleteTorrentProcess = async (id) => {
         await deleteTorrent(id, token);
-        fetchTorrents();
+        await fetchTorrents();
+    };
+
+    const refreshTorrents = async () => {
+        await fetchTorrents();
     };
 
     // -----------------------------
@@ -393,6 +614,13 @@ export default function useTorrents(token) {
     return {
         torrents: mergedTorrents,
         loaded,   // ✅ expose this
+        page,
+        setPage,
+        pageSize,
+        setPageSize,
+        totalPages,
+        totalItems,
+        refreshTorrents,
         stopTorrentProcess,
         resumeTorrentProcess,
         deleteTorrentProcess,

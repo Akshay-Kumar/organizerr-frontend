@@ -1,6 +1,6 @@
 // src/components/RegisterForm.js
 import React, { useState } from "react";
-import { login, register } from "../api/api";
+import { login, register, getMe } from "../api/api";
 import "./Auth.css";
 
 export default function RegisterForm({ onRegistered }) {
@@ -26,6 +26,13 @@ export default function RegisterForm({ onRegistered }) {
 
             const token = res.data.token || res.data.access_token;
             if (!token) throw new Error("No token received from server");
+
+            const me = await getMe(token);
+
+            localStorage.setItem(
+                "user",
+                JSON.stringify(me.data)
+            );
 
             onRegistered(token);
             alert("Registration successful! Logging you in...");

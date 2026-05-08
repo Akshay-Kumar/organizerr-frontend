@@ -4,6 +4,97 @@ import useTorrents from "../hooks/useTorrents";
 import "./TorrentsDashboard.css";
 import "./Loading.css"
 
+const STAGE_LABELS = {
+    copy: "Copying",
+    metadata: "Metadata",
+    subtitles: "Subtitles",
+    artwork: "Artwork",
+    validation: "Validating",
+    plex: "Plex Scan",
+    emby: "Emby Scan",
+    completed: "Completed",
+    media_info: "Media Info",
+};
+
+const STAGE_PRIORITY = {
+    media_info: 1,
+    metadata: 2,
+    copy: 3,
+    artwork: 4,
+    subtitles: 5,
+    validation: 6,
+    plex: 7,
+    emby: 8,
+    completed: 999
+};
+
+const getFileIcon = (filename = "") => {
+
+    const ext = filename
+        .split(".")
+        .pop()
+        ?.toLowerCase();
+
+    // Video
+    if ([
+        "mkv",
+        "mp4",
+        "avi",
+        "mov",
+        "wmv",
+        "flv",
+        "webm",
+        "m4v",
+    ].includes(ext)) {
+        return "🎬";
+    }
+
+    // Subtitle
+    if ([
+        "srt",
+        "ass",
+        "ssa",
+        "sub",
+    ].includes(ext)) {
+        return "📝";
+    }
+
+    // Image
+    if ([
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+        "gif",
+    ].includes(ext)) {
+        return "🖼️";
+    }
+
+    // Audio
+    if ([
+        "mp3",
+        "flac",
+        "aac",
+        "wav",
+        "opus",
+    ].includes(ext)) {
+        return "🎵";
+    }
+
+    // Archive
+    if ([
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+    ].includes(ext)) {
+        return "📦";
+    }
+
+    return "📄";
+};
+
 function formatBytesPerSec(bps) {
     const n = Number(bps || 0);
     if (!Number.isFinite(n) || n <= 0) return "0 B/s";
@@ -93,7 +184,7 @@ function isDownloadComplete(torrent) {
     const progress = Number(torrent?.progress || 0);
     return progress >= 100;
 }
-
+/*
 function getMoveState(torrent) {
     const latestOpsMap = {};
 
@@ -129,12 +220,100 @@ function getMoveState(torrent) {
 
     return "processing";
 }
+*/
 
+function getMoveState(torrent) {
+    const fileOps = torrent.fileOperations || [];
+
+    if (!fileOps.length) {
+        return isDownloadComplete(torrent)
+            ? "waiting"
+            : "processing";
+    }
+
+    // Any failed file = failed torrent
+    const anyFailed = fileOps.some(
+        op => op.status === "failed"
+    );
+
+    if (anyFailed) {
+        return "failed";
+    }
+
+    // Any active processing file = processing
+    const anyProcessing = fileOps.some(
+        op =>
+            op.status === "processing" &&
+            op.stage !== "completed"
+    );
+
+    if (anyProcessing) {
+        return "processing";
+    }
+
+    // All completed
+    const allCompleted = fileOps.every(
+        op =>
+            op.status === "completed" ||
+            op.stage === "completed" ||
+            op.progress === 100
+    );
+
+    if (allCompleted) {
+        return "moved";
+    }
+
+    // Torrent download completed but organizer not started
+    if (isDownloadComplete(torrent)) {
+        return "waiting";
+    }
+
+    return "processing";
+}
+
+function getCurrentStage(fileOps = []) {
+    const active = fileOps
+        .filter(op => op.status === "processing")
+        .sort((a, b) => {
+            const pa = STAGE_PRIORITY[a.stage] ?? 0;
+            const pb = STAGE_PRIORITY[b.stage] ?? 0;
+            return pb - pa;
+        });
+
+    return active[0]?.stage || null;
+}
+
+/*
 function getMoveLabel(moveState) {
     if (moveState === "moved") return "Moved Successfully";
     if (moveState === "failed") return "Move Failed";
-    if (moveState === "waiting") return "Waiting for Organizer";
+    if (moveState === "waiting") return "Waiting for Media-Organizerr";
     return "Downloading / In Progress";
+}
+*/
+
+function getMoveLabel(moveState, torrent) {
+    if (moveState === "moved") {
+        return "Moved Successfully";
+    }
+
+    if (moveState === "failed") {
+        return "Move Failed";
+    }
+
+    if (moveState === "waiting") {
+        return "Waiting for Media-Organizerr";
+    }
+
+    const currentStage = getCurrentStage(
+        torrent.fileOperations
+    );
+
+    if (currentStage && STAGE_LABELS[currentStage]) {
+        return STAGE_LABELS[currentStage];
+    }
+
+    return "Processing";
 }
 
 function getHashStatus(fileOperation) {
@@ -152,11 +331,37 @@ function getHashLabel(hashStatus) {
 
 export default function TorrentsDashboard() {
     const token = localStorage.getItem("token");
-    const { torrents, stopTorrentProcess, resumeTorrentProcess, deleteTorrentProcess, loaded } =
-        useTorrents(token);
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const isAdmin = !!user?.is_admin;
+    const {
+        torrents,
+        stopTorrentProcess,
+        resumeTorrentProcess,
+        deleteTorrentProcess,
+        loaded,
+
+        page,
+        setPage,
+
+        pageSize,
+        setPageSize,
+
+        totalPages,
+        totalItems,
+
+        refreshTorrents
+    } = useTorrents(token);
 
     const [query, setQuery] = useState("");
     const [expanded, setExpanded] = useState({});
+    const [expandedFiles, setExpandedFiles] = useState({});
+
+    const toggleFileExpand = (fileHash) => {
+        setExpandedFiles(prev => ({
+            ...prev,
+            [fileHash]: !prev[fileHash]
+        }));
+    };
 
     const toggleExpand = (id) => {
         setExpanded(prev => ({
@@ -165,22 +370,56 @@ export default function TorrentsDashboard() {
         }));
     };
 
-    const filtered = useMemo(() => {
-        return torrents.filter((t) =>
-            (t.name || "").toLowerCase().includes(query.toLowerCase())
-        );
-    }, [torrents, query]);
+    useEffect(() => {
+        console.log("PAGE CHANGED:", page);
+    }, [page]);
 
-    const STAGE_LABELS = {
-        copy: "Copying",
-        metadata: "Metadata",
-        subtitles: "Subtitles",
-        artwork: "Artwork",
-        validation: "Validating",
-        plex: "Plex Scan",
-        emby: "Emby Scan",
-        completed: "Completed"
-    };
+    useEffect(() => {
+        const handleTorrentAdded = () => {
+            setPage(1);
+            refreshTorrents();
+        };
+
+        window.addEventListener(
+            "torrent-added",
+            handleTorrentAdded
+        );
+
+        return () => {
+            window.removeEventListener(
+                "torrent-added",
+                handleTorrentAdded
+            );
+        };
+    }, [refreshTorrents, setPage]);
+
+    useEffect(() => {
+        console.log(
+            "[STATE] PAGE CHANGED",
+            page
+        );
+    }, [page]);
+
+    useEffect(() => {
+        console.log(
+            "[STATE] TORRENTS UPDATED",
+            torrents.length,
+            torrents.map(t => t.display_name)
+        );
+    }, [torrents]);
+
+    const filtered = useMemo(() => {
+        const q = query.toLowerCase();
+
+        return torrents.filter((t) => {
+            return (
+                (t.display_name || "").toLowerCase().includes(q) ||
+                (t.correct_name || "").toLowerCase().includes(q) ||
+                (t.name || "").toLowerCase().includes(q) ||
+                (t.episode_title || "").toLowerCase().includes(q)
+            );
+        });
+    }, [torrents, query]);
 
 
     if (!loaded) {
@@ -219,12 +458,98 @@ export default function TorrentsDashboard() {
             </div>
 
             <div className="torrent-list">
+                <div className="pagination-bar">
+
+                    <div className="pagination-left">
+                        Showing page {page} of {totalPages}
+                        <span className="pagination-total">
+                            ({totalItems} torrents)
+                        </span>
+                    </div>
+
+                    <div className="pagination-center">
+
+                        <button
+                            disabled={page <= 1}
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                        >
+                            Previous
+                        </button>
+
+                        {Array.from(
+                            { length: Math.min(totalPages, 5) },
+                            (_, i) => {
+                                let pageNum;
+
+                                if (totalPages <= 5) {
+                                    pageNum = i + 1;
+                                } else if (page <= 3) {
+                                    pageNum = i + 1;
+                                } else if (page >= totalPages - 2) {
+                                    pageNum = totalPages - 4 + i;
+                                } else {
+                                    pageNum = page - 2 + i;
+                                }
+
+                                return (
+                                    <button
+                                        key={pageNum}
+                                        className={
+                                            page === pageNum
+                                                ? "active-page"
+                                                : ""
+                                        }
+                                        onClick={() => {
+                                            console.log(
+                                                "[UI] GO TO PAGE",
+                                                pageNum
+                                            );
+
+                                            setPage(pageNum);
+                                        }}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                );
+                            }
+                        )}
+
+                        <button
+                            disabled={page >= totalPages}
+                            onClick={() =>
+                                setPage(p => Math.min(totalPages, p + 1))
+                            }
+                        >
+                            Next
+                        </button>
+                    </div>
+
+                    <div className="pagination-right">
+
+                        {isAdmin && (
+                            <select
+                                value={pageSize}
+                                onChange={(e) => {
+                                    setPage(1);
+                                    setPageSize(Number(e.target.value));
+                                }}
+                            >
+                                <option value={10}>10</option>
+                                <option value={25}>25</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        )}
+
+                    </div>
+                </div>
                 {filtered.map((t) => {
                     const state = normalizeState(t.state);
                     const fileOp = (t.fileOperations || [])
                         .slice()
                         .sort((a, b) => (new Date(b.timestamp || 0) - new Date(a.timestamp || 0)))[0] || null;
                     const moveState = getMoveState(t, fileOp);
+                    /*
                     const dedupedOps = Object.values(
                         (t.fileOperations || []).reduce((acc, op) => {
                             if (!op.file_hash) return acc;
@@ -234,6 +559,35 @@ export default function TorrentsDashboard() {
                             const getTime = (ts) => new Date(ts || 0).getTime();
 
                             if (!existing || getTime(op.timestamp) > getTime(existing.timestamp)) {
+                                acc[op.file_hash] = op;
+                            }
+
+                            return acc;
+                        }, {})
+                    );
+                    */
+                    const dedupedOps = Object.values(
+                        (t.fileOperations || []).reduce((acc, op) => {
+                            if (!op.file_hash) return acc;
+
+                            const existing = acc[op.file_hash];
+
+                            const currentPriority =
+                                STAGE_PRIORITY[op.stage] ?? 500;
+
+                            const existingPriority =
+                                STAGE_PRIORITY[existing?.stage] ?? 500;
+
+                            // Prefer active stages over completed
+                            if (
+                                !existing ||
+                                currentPriority > existingPriority ||
+                                (
+                                    currentPriority === existingPriority &&
+                                    new Date(op.timestamp || 0) >
+                                    new Date(existing.timestamp || 0)
+                                )
+                            ) {
                                 acc[op.file_hash] = op;
                             }
 
@@ -254,19 +608,26 @@ export default function TorrentsDashboard() {
 
                             <div className="torrent-middle">
                                 <div className="torrent-title">
-                                    <span className="torrent-name">{t.name}</span>
+                                    <span className="torrent-name">
+                                        {t.display_name || t.correct_name || t.name}
+                                    </span>
 
                                     {/* 🆕 FILE COUNT */}
-                                    {t.fileOperations?.length > 1 && (
+                                    {t.fileOperations?.length > 0 && (
                                         <span
                                             className="file-count clickable"
                                             onClick={() => toggleExpand(t.id)}
                                         >
-                                            {t.fileOperations.length} files {expanded[t.id] ? "▲" : "▼"}
+                                            {t.fileOperations.length === 1
+                                                ? "1 file"
+                                                : `${t.fileOperations.length} files`}
+                                            {expanded[t.id] ? "▲" : "▼"}
                                         </span>
                                     )}
 
-                                    <span className={`badge ${state}`}>{state}</span>
+                                    <span className={`badge ${state}`}>
+                                        {state}
+                                    </span>
                                 </div>
 
                                 <div className="progress-bar">
@@ -289,78 +650,127 @@ export default function TorrentsDashboard() {
                                 </div>
 
                                 <div className="torrent-move-section">
-                                    {expanded[t.id] && (
+                                    {(expanded[t.id] || t.fileOperations?.length === 1) && (
                                         <div className="file-ops-list">
                                             {dedupedOps.slice(0, 20).map(op => (
-                                                <div key={op.file_hash} className="file-op-row">
+                                                <div key={op.file_hash} className="file-op-container">
+                                                    <div className="file-op-row">
 
-                                                    <div className="file-op-left">
-                                                        <span className="file-name" title={op.source}>
-                                                            {op.source?.split("/").pop() || "Unknown file"}
-                                                        </span>
-
-                                                        <span className="file-stage">
-                                                            {STAGE_LABELS[op.stage] || "Processing"}
-                                                        </span>
-                                                    </div>
-
-                                                    {/* 🔥 NEW: PROGRESS BAR */}
-                                                    <div className="file-progress-bar">
-                                                        <div
-                                                            className="file-progress-fill"
-                                                            style={{ width: `${op.progress || 0}%` }}
-                                                        />
-                                                    </div>
-
-                                                    <div className="file-op-right">
-
-                                                        {/* 🔥 PROGRESS % */}
-                                                        <span className="file-progress-text">
-                                                            {Math.round(op.progress || 0)}%
-                                                        </span>
-
-                                                        {/* 🔥 STATUS (keep your existing logic) */}
-                                                        <span className={`status ${
-                                                            op.status === "completed" ? "success" :
-                                                                op.status === "failed" ? "failed" :
-                                                                    "processing"
-                                                        }`}>
-                                                            {op.status === "completed" ? "✔" :
-                                                                op.status === "failed" ? "✖" : "⏳"}
-                                                        </span>
-
-                                                        {/* ✅ KEEP: FILE SIZE */}
-                                                        <span className="file-size">
-                                                            {formatFileSize(op.file_size)}
-                                                        </span>
-
-                                                        {/* ✅ KEEP: TIMESTAMP */}
-                                                        <span className="file-time">
-                                                            {op.timestamp ? formatDateTime(op.timestamp) : "—"}
-                                                        </span>
-
-                                                        {/* 🔥 NEW: SPEED */}
-                                                        {op.speed && (
-                                                            <span className="file-speed">
-                                                                {op.speed} MB/s
+                                                        <div className="file-op-left">
+                                                            <span className="file-name" title={op.source}>
+                                                                <span className="file-icon">
+                                                                    {getFileIcon(op.source)}
+                                                                </span>
+                                                                {op.source?.split(/[\\/]/).pop() || "Unknown file"}
                                                             </span>
-                                                        )}
 
-                                                        {/* 🔥 NEW: ETA */}
-                                                        {op.eta && (
-                                                            <span className="file-eta">
-                                                                ETA: {Math.round(op.eta)}s
+                                                            <span className={`file-stage ${op.status || ""}`}>
+                                                                {STAGE_LABELS[op.stage] || "Processing"}
                                                             </span>
-                                                        )}
+                                                        </div>
 
+                                                        <div className="file-progress-row">
+                                                            <div className="file-progress-bar">
+                                                                <div
+                                                                    className="file-progress-fill"
+                                                                    style={{
+                                                                        width: `${op.progress || 0}%`
+                                                                    }}
+                                                                />
+                                                            </div>
+
+                                                            <div className="file-op-right">
+                                                                <span className="file-progress-text">
+                                                                    {Math.round(op.progress || 0)}%
+                                                                </span>
+
+                                                                <span className={`status ${
+                                                                    op.status === "completed"
+                                                                        ? "success"
+                                                                        : op.status === "failed"
+                                                                            ? "failed"
+                                                                            : "processing"
+                                                                }`}>
+                                                                    {op.status === "completed"
+                                                                        ? "✔"
+                                                                        : op.status === "failed"
+                                                                            ? "✖"
+                                                                            : "⏳"}
+                                                                </span>
+
+                                                                <span className="file-size">
+                                                                    {formatFileSize(op.file_size)}
+                                                                </span>
+
+                                                                <span className="file-time">
+                                                                    {op.timestamp
+                                                                        ? formatDateTime(op.timestamp)
+                                                                        : "—"}
+                                                                </span>
+
+                                                                <button
+                                                                    className="file-expand-btn"
+                                                                    onClick={() => toggleFileExpand(op.file_hash)}
+                                                                >
+                                                                    {expandedFiles[op.file_hash] ? "−" : "+"}
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     </div>
+
+                                                    {/* ✅ ADD THIS BLOCK */}
+                                                    {expandedFiles[op.file_hash] && (
+                                                        <div className="file-extra-details">
+
+                                                            <div className="move-row">
+                                                                <span className="move-label">Source</span>
+                                                                <span
+                                                                    className="move-path"
+                                                                    title={op.source || "—"}
+                                                                >
+                                                                    {op.source || "—"}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="move-row">
+                                                                <span className="move-label">Destination</span>
+                                                                <span
+                                                                    className="move-path"
+                                                                    title={op.destination || "—"}
+                                                                >
+                                                                    {op.destination || "—"}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="move-row">
+                                                                <span className="move-label">Backup</span>
+                                                                <span
+                                                                    className="move-path"
+                                                                    title={op.backup || "—"}
+                                                                >
+                                                                    {op.backup || "—"}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="move-row">
+                                                                <span className="move-label">Hash</span>
+                                                                <span
+                                                                    className="move-path hash-text"
+                                                                    title={op.file_hash || "—"}
+                                                                >
+                                                                    {op.file_hash || "—"}
+                                                                </span>
+                                                            </div>
+
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                     <div className="torrent-move-header">
                                         <span className={`move-badge ${moveState}`}>
-                                            {getMoveLabel(moveState)}
+                                            {getMoveLabel(moveState, t)}
                                         </span>
 
                                         <div className="torrent-move-badges">

@@ -288,6 +288,10 @@ export default function TorrentForm({ onAdded }) {
             setActiveIndex(-1);
 
             if (fileInputRef.current) fileInputRef.current.value = "";
+            window.dispatchEvent(
+                new Event("torrent-added")
+            );
+
             onAdded();
         } catch (err) {
             console.error(err);

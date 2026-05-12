@@ -5,6 +5,7 @@ import TorrentList from "../components/TorrentList";
 import LoginForm from "../components/LoginForm";
 import RegisterForm from "../components/RegisterForm";
 import TorrentsDashboard from "../components/TorrentsDashboard";
+import ErrorBoundary from "../components/ErrorBoundary";
 import "./Home.css";
 
 export default function Home() {
@@ -89,7 +90,9 @@ export default function Home() {
                     <TorrentList key={refresh} token={token} />
                 </>
             ) : (
-                <TorrentsDashboard />
+                <ErrorBoundary>
+                    <TorrentsDashboard />
+                </ErrorBoundary>
             )}
         </div>
     );

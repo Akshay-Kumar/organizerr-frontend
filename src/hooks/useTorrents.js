@@ -196,19 +196,20 @@ export default function useTorrents(token, externalPage = null, externalPageSize
 
                 updatedList[index] = {
                     ...existing,
-                    ...op,
-                    progress: Math.max(existing.progress || 0, op.progress || 0),
+                    ...op
                 };
             } else {
                 updatedList.push(op);
             }
 
             // sort latest first
+            /*
             updatedList.sort((a, b) => {
                 const t = new Date(b.timestamp) - new Date(a.timestamp);
                 if (t !== 0) return t;
                 return (b.progress || 0) - (a.progress || 0);
             });
+            */
 
             return {
                 ...prev,
@@ -290,6 +291,7 @@ export default function useTorrents(token, externalPage = null, externalPageSize
                     const data = JSON.parse(e.data);
 
                     // 🔥 THROTTLE START
+                    /*
                     const now = Date.now();
                     if (data.type === "file_ops_update") {
                         if (!data.file_operation) return;
@@ -301,6 +303,7 @@ export default function useTorrents(token, externalPage = null, externalPageSize
                         if (now - lastUpdateTs.current[key] < 100) return;
                         lastUpdateTs.current[key] = now;
                     }
+                    */
                     // 🔥 THROTTLE END
 
                     lastUpdateRef.current = Date.now(); // ✅ moved AFTER parse
@@ -399,8 +402,6 @@ export default function useTorrents(token, externalPage = null, externalPageSize
 
                         setFileOperations(map);
                     }
-
-
                 } catch (err) {
                     console.error("WS parse error:", err);
                 }

@@ -1,0 +1,56 @@
+.error-boundary {
+
+    padding: 40px;
+
+    margin: 40px auto;
+
+    max-width: 700px;
+
+    background: #fff5f5;
+
+    border: 1px solid #fecaca;
+
+    border-radius: 16px;
+
+    color: #991b1b;
+
+    text-align: center;
+}
+
+.error-boundary h2 {
+    margin-bottom: 12px;
+}
+
+.error-message {
+
+    margin-top: 16px;
+
+    padding: 12px;
+
+    background: rgba(0,0,0,0.05);
+
+    border-radius: 8px;
+
+    overflow-x: auto;
+
+    font-size: 12px;
+
+    text-align: left;
+}
+
+.error-boundary button {
+
+    margin-top: 20px;
+
+    padding: 10px 18px;
+
+    border: none;
+
+    border-radius: 10px;
+
+    background: #dc2626;
+
+    color: white;
+
+    cursor: pointer;
+}

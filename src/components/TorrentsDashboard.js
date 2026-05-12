@@ -12,23 +12,16 @@ const STAGE_LABELS = {
     validation: "Validating",
     plex: "Plex Scan",
     emby: "Emby Scan",
+    library_scan: "Library Scan",
     completed: "Completed",
     media_info: "Media Info",
 };
 
-const STAGE_PRIORITY = {
-    media_info: 1,
-    metadata: 2,
-    copy: 3,
-    artwork: 4,
-    subtitles: 5,
-    validation: 6,
-    plex: 7,
-    emby: 8,
-    completed: 999
-};
+const getFileIcon = (filename) => {
 
-const getFileIcon = (filename = "") => {
+    if (!filename || typeof filename !== "string") {
+        return "📄";
+    }
 
     const ext = filename
         .split(".")
@@ -184,16 +177,21 @@ function isDownloadComplete(torrent) {
     const progress = Number(torrent?.progress || 0);
     return progress >= 100;
 }
-/*
+
 function getMoveState(torrent) {
+
     const latestOpsMap = {};
 
     (torrent.fileOperations || []).forEach(op => {
+
         if (!op.file_hash) return;
 
         if (
             !latestOpsMap[op.file_hash] ||
-            new Date(op.timestamp || 0) > new Date(latestOpsMap[op.file_hash].timestamp || 0)
+            new Date(op.timestamp || 0) >
+            new Date(
+                latestOpsMap[op.file_hash].timestamp || 0
+            )
         ) {
             latestOpsMap[op.file_hash] = op;
         }
@@ -201,37 +199,29 @@ function getMoveState(torrent) {
 
     const fileOps = Object.values(latestOpsMap);
 
-    if (!fileOps.length) return "processing";
-
-    const allCompleted = fileOps.every(
-        op => op.status === "completed" && op.progress === 100
-    );
-
-    // ✅ IMPORTANT: check this FIRST
-    if (allCompleted) return "moved";
-
-    const anyFailed = fileOps.some(
-        op => op.status === "failed"
-    );
-
-    if (anyFailed) return "failed";
-
-    if (isDownloadComplete(torrent)) return "waiting";
-
-    return "processing";
-}
-*/
-
-function getMoveState(torrent) {
-    const fileOps = torrent.fileOperations || [];
-
+    // -----------------------------------
+    // Waiting for organizer
+    // -----------------------------------
     if (!fileOps.length) {
-        return isDownloadComplete(torrent)
-            ? "waiting"
-            : "processing";
+        return "waiting";
     }
 
-    // Any failed file = failed torrent
+    // -----------------------------------
+    // Completed
+    // -----------------------------------
+    const allCompleted = fileOps.every(
+        op =>
+            op.stage === "completed" &&
+            op.status === "completed"
+    );
+
+    if (allCompleted) {
+        return "moved";
+    }
+
+    // -----------------------------------
+    // Failed
+    // -----------------------------------
     const anyFailed = fileOps.some(
         op => op.status === "failed"
     );
@@ -240,57 +230,23 @@ function getMoveState(torrent) {
         return "failed";
     }
 
-    // Any active processing file = processing
-    const anyProcessing = fileOps.some(
-        op =>
-            op.status === "processing" &&
-            op.stage !== "completed"
-    );
-
-    if (anyProcessing) {
-        return "processing";
-    }
-
-    // All completed
-    const allCompleted = fileOps.every(
-        op =>
-            op.status === "completed" ||
-            op.stage === "completed" ||
-            op.progress === 100
-    );
-
-    if (allCompleted) {
-        return "moved";
-    }
-
-    // Torrent download completed but organizer not started
-    if (isDownloadComplete(torrent)) {
-        return "waiting";
-    }
-
+    // -----------------------------------
+    // Organizer actively processing
+    // -----------------------------------
     return "processing";
 }
 
 function getCurrentStage(fileOps = []) {
-    const active = fileOps
-        .filter(op => op.status === "processing")
-        .sort((a, b) => {
-            const pa = STAGE_PRIORITY[a.stage] ?? 0;
-            const pb = STAGE_PRIORITY[b.stage] ?? 0;
-            return pb - pa;
-        });
+    const latest = fileOps
+        .slice()
+        .sort(
+            (a, b) =>
+                new Date(b.timestamp || 0) -
+                new Date(a.timestamp || 0)
+        )[0];
 
-    return active[0]?.stage || null;
+    return latest?.stage || null;
 }
-
-/*
-function getMoveLabel(moveState) {
-    if (moveState === "moved") return "Moved Successfully";
-    if (moveState === "failed") return "Move Failed";
-    if (moveState === "waiting") return "Waiting for Media-Organizerr";
-    return "Downloading / In Progress";
-}
-*/
 
 function getMoveLabel(moveState, torrent) {
     if (moveState === "moved") {
@@ -460,79 +416,69 @@ export default function TorrentsDashboard() {
             <div className="torrent-list">
                 <div className="pagination-bar">
 
-                    <div className="pagination-left">
+                    <div className="pagination-info">
                         Showing page {page} of {totalPages}
-                        <span className="pagination-total">
-                            ({totalItems} torrents)
-                        </span>
+                        ({totalItems} torrents)
                     </div>
 
-                    <div className="pagination-center">
-
+                    <div className="pagination-controls">
                         <button
                             disabled={page <= 1}
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            onClick={() =>
+                                setPage((p) => Math.max(1, p - 1))
+                            }
                         >
                             Previous
                         </button>
 
                         {Array.from(
-                            { length: Math.min(totalPages, 5) },
+                            {
+                                length: Math.min(5, totalPages)
+                            },
                             (_, i) => {
-                                let pageNum;
 
-                                if (totalPages <= 5) {
-                                    pageNum = i + 1;
-                                } else if (page <= 3) {
-                                    pageNum = i + 1;
-                                } else if (page >= totalPages - 2) {
-                                    pageNum = totalPages - 4 + i;
-                                } else {
-                                    pageNum = page - 2 + i;
+                                let start = Math.max(1, page - 2);
+
+                                if (start + 4 > totalPages) {
+                                    start = Math.max(
+                                        1,
+                                        totalPages - 4
+                                    );
                                 }
 
-                                return (
-                                    <button
-                                        key={pageNum}
-                                        className={
-                                            page === pageNum
-                                                ? "active-page"
-                                                : ""
-                                        }
-                                        onClick={() => {
-                                            console.log(
-                                                "[UI] GO TO PAGE",
-                                                pageNum
-                                            );
-
-                                            setPage(pageNum);
-                                        }}
-                                    >
-                                        {pageNum}
-                                    </button>
-                                );
+                                return start + i;
                             }
-                        )}
+                        ).map((p) => (
+                            <button
+                                key={p}
+                                className={p === page ? "active" : ""}
+                                onClick={() => setPage(p)}
+                            >
+                                {p}
+                            </button>
+                        ))}
 
                         <button
                             disabled={page >= totalPages}
                             onClick={() =>
-                                setPage(p => Math.min(totalPages, p + 1))
+                                setPage((p) =>
+                                    Math.min(totalPages, p + 1)
+                                )
                             }
                         >
                             Next
                         </button>
-                    </div>
-
-                    <div className="pagination-right">
 
                         {isAdmin && (
                             <select
                                 value={pageSize}
                                 onChange={(e) => {
                                     setPage(1);
-                                    setPageSize(Number(e.target.value));
+                                    setPageSize(
+                                        Number(e.target.value)
+                                    );
                                 }}
+                                className="page-size-select"
                             >
                                 <option value={10}>10</option>
                                 <option value={25}>25</option>
@@ -540,7 +486,6 @@ export default function TorrentsDashboard() {
                                 <option value={100}>100</option>
                             </select>
                         )}
-
                     </div>
                 </div>
                 {filtered.map((t) => {
@@ -549,51 +494,8 @@ export default function TorrentsDashboard() {
                         .slice()
                         .sort((a, b) => (new Date(b.timestamp || 0) - new Date(a.timestamp || 0)))[0] || null;
                     const moveState = getMoveState(t, fileOp);
-                    /*
-                    const dedupedOps = Object.values(
-                        (t.fileOperations || []).reduce((acc, op) => {
-                            if (!op.file_hash) return acc;
 
-                            const existing = acc[op.file_hash];
-
-                            const getTime = (ts) => new Date(ts || 0).getTime();
-
-                            if (!existing || getTime(op.timestamp) > getTime(existing.timestamp)) {
-                                acc[op.file_hash] = op;
-                            }
-
-                            return acc;
-                        }, {})
-                    );
-                    */
-                    const dedupedOps = Object.values(
-                        (t.fileOperations || []).reduce((acc, op) => {
-                            if (!op.file_hash) return acc;
-
-                            const existing = acc[op.file_hash];
-
-                            const currentPriority =
-                                STAGE_PRIORITY[op.stage] ?? 500;
-
-                            const existingPriority =
-                                STAGE_PRIORITY[existing?.stage] ?? 500;
-
-                            // Prefer active stages over completed
-                            if (
-                                !existing ||
-                                currentPriority > existingPriority ||
-                                (
-                                    currentPriority === existingPriority &&
-                                    new Date(op.timestamp || 0) >
-                                    new Date(existing.timestamp || 0)
-                                )
-                            ) {
-                                acc[op.file_hash] = op;
-                            }
-
-                            return acc;
-                        }, {})
-                    );
+                    const dedupedOps = t.fileOperations || [];
                     const hashStatus = getHashStatus(fileOp);
 
                     return (
